@@ -1,0 +1,212 @@
+import numpy as np
+import pandas as pd
+import datetime#时间戳
+#延误时间=计飞-预飞
+
+def get_flights(file_path):#将航班信息读入，并依据航班号和计划起飞时间进行排序
+    # file_path: the data file location
+    # date_col: the columns that need to be parsed as dates (from string to date)
+    # encoding: 'gbk' and other possible encodings 'UTF-16 LE','chinese', 'gb2312'
+    #date_col = ['计飞','预飞','实飞','计到','预到','实到']
+    # read a DataFrame from csv data file: flights
+    flights = pd.read_csv(file_path, sep=',',
+                          encoding='gbk')
+    ## sort the Flights and delete nulls
+    # Warning: the index in python starts from 0 (not 1)!
+    # N_flights: the number of flights
+    flights = flights.sort_values(by=['机号','计飞'],ascending = [True,True])
+    flights = flights[flights.实到.notnull()]#去处没有实际起飞或者降落的，否则无法计算波及延误
+    flights = flights[flights.实飞.notnull()]
+    N_flights = len(flights)
+    # set the index of flight_seq as from 0 to N_flights-1
+    flights.index = np.arange(N_flights)
+    for s in range(N_flights):
+        if flights.loc[s,'延误时间']<=0:#不考虑延误时间小于0的情况
+            flights.loc[s,'延误时间']=0
+#        if type(flights.loc[s,'实到'])==float:
+#            del(flights.loc[s,:])
+    return(flights)
+#flights1=get_flights('C:/Users/wdr78/Desktop/FlightScheduleSimulation-master/2018-02-01.csv')
+#flights2=get_flights('C:/Users/wdr78/Desktop/FlightScheduleSimulation-master/2018-02-08.csv')
+#flights3=get_flights('C:/Users/wdr78/Desktop/FlightScheduleSimulation-master/2018-02-15.csv')
+#flights4=get_flights('C:/Users/wdr78/Desktop/FlightScheduleSimulation-master/2018-02-22.csv')
+#a=sum(flights.loc[:,'延误时间'])
+#get_flight_seq=get_flight_seq(flights)
+get_acrosstime=pd.read_csv('C:/Users/wdr78/Desktop/FlightScheduleSimulation-master/flight_acrosstime.csv',encoding='gbk')
+#flights.loc[0,'延误时间']
+#flights=flights1
+#j=0
+#起始过程所用函数（没有减去前一个时间段的波及延误）
+def initial_f(flights):
+    flights['独立延误']=flights.loc[:,'延误时间']
+#    final_flight=np.array([])#每架飞机该时间段对应的最后航班
+    i=0
+    while i<len(flights):
+        TailNo=flights.loc[i,'机号']#获得机号
+        differ_num=flights[flights['机号']==TailNo].index.tolist()#同一飞机的不同航班
+        if len(differ_num)>=2:#去除该飞机在这段时间里只有一个航班的情况
+#            differ_num=[int(d) for d in differ_num[0:-2]]
+            for j in [int(d) for d in differ_num[1:-1]]:
+#            if flights.loc[j,'延误时间']<=0:#不考虑延误时间小于0的情况
+#                flights.loc[j,'延误时间']=0
+#            else:
+                if flights.loc[j,'起飞场'] not in get_acrosstime[get_acrosstime['机号']==flights.loc[j,'机号']].loc[:,'机场名称']:#防止出现某些起飞场不在过站时间的表格里
+                    TransitQuickTime=get_acrosstime[get_acrosstime['机号']==flights.loc[j,'机号']][get_acrosstime[get_acrosstime['机号']==
+                                                                   flights.loc[j,'机号']]['机场名称']=='其他'].values[0,15]#获得最快过站时间（不在过站时间表格里的机场称为其他机场）
+                else:
+                    TransitQuickTime=get_acrosstime[get_acrosstime['机号']==flights.loc[j,'机号']][get_acrosstime[get_acrosstime['机号']==
+                                                                   flights.loc[j,'机号']]['机场名称']==flights.loc[j,'起飞场']].values[0,15]
+                if (datetime.datetime.strptime(str(flights.loc[j,'计飞']), "%Y-%m-%d %H:%M:%S")-
+                    datetime.datetime.strptime(str(flights.loc[j-1,'实到']), "%Y-%m-%d %H:%M:%S")).seconds/60<TransitQuickTime:#说明有波及延误
+#time1=flights.loc[0+1,'计飞'].to_datetime()#pandas._libs.tslib.Timestamp转换成dataframe
+#time2=flights.loc[0,'实到'].to_datetime()
+#(time1-time2).seconds/60#只有days和秒，没有分钟
+                    flights.loc[j,'独立延误']=(datetime.datetime.strptime(flights.loc[j,'实飞'], "%Y-%m-%d %H:%M:%S")-
+                               datetime.datetime.strptime(flights.loc[j-1,'实到'], "%Y-%m-%d %H:%M:%S")).seconds/60-TransitQuickTime#去除波及延误，获得独立延误
+            i=differ_num[-1]+1
+        else:
+            i+=1
+#        final_flight=np.append(final_flight,differ_num[-1]+1)#每架飞机该时间段对应最后航班的index记录下来
+#b=sum(flights.loc[:,'延误时间'])
+#计算每个航班的延误严重程度
+    delay_degree=np.array([])
+    for i in range(len(flights)):
+        if flights.loc[i,'独立延误']/60==0:
+            delay_degree=np.append(delay_degree,0)
+        elif flights.loc[i,'独立延误']/60<=0.5:
+            delay_degree=np.append(delay_degree,1)
+        elif flights.loc[i,'独立延误']/60<1:
+            delay_degree=np.append(delay_degree,2)
+        elif flights.loc[i,'独立延误']/60<2:
+            delay_degree=np.append(delay_degree,4)
+        elif flights.loc[i,'独立延误']/60<4:
+            delay_degree=np.append(delay_degree,6)
+        else:
+            delay_degree=np.append(delay_degree,8)
+    flights['延误严重程度']=delay_degree
+
+#initial_f(flights1)
+#sum(flights1.loc[:,'独立延误'])
+#sum(flights1.loc[:,'延误时间'])
+##############################################################################################################################
+#后续过程所用函数（减去了前一个时间段的延误时间）
+##############################################################################################################################
+def follow_f(flights_fro,flights_beh):
+    flights_beh['独立延误']=flights_beh.loc[:,'延误时间']
+#    final_flight=np.array([])#每架飞机该时间段对应的最后航班
+    i=0
+    while i<len(flights_beh):
+        TailNo=flights_beh.loc[i,'机号']#获得机号
+        differ_num=flights_beh[flights_beh['机号']==TailNo].index.tolist()#同一飞机的不同航班
+        if len(differ_num)>=2:#去除该飞机在这段时间里只有一个航班的情况
+#            differ_num=[int(d) for d in differ_num[0:-2]]
+            j=differ_num[0]
+            if flights_beh.loc[j,'起飞场'] not in get_acrosstime[get_acrosstime['机号']==flights_beh.loc[j,'机号']].loc[:,'机场名称']:#防止出现某些起飞场不在过站时间的表格里
+                TransitQuickTime=get_acrosstime[get_acrosstime['机号']==flights_beh.loc[j,'机号']][get_acrosstime[get_acrosstime['机号']==
+                                                               flights_beh.loc[j,'机号']]['机场名称']=='其他'].values[0,15]#获得最快过站时间（不在过站时间表格里的机场称为其他机场）
+            else:
+                TransitQuickTime=get_acrosstime[get_acrosstime['机号']==flights_beh.loc[j,'机号']][get_acrosstime[get_acrosstime['机号']==
+                                                               flights_beh.loc[j,'机号']]['机场名称']==flights_beh.loc[j,'起飞场']].values[0,15]
+            if TailNo in flights_fro['机号']:
+                differ_num_fro=flights_fro[flights_fro['机号']==TailNo].index.tolist()[-1]#取上一张表中这架飞机执行的最后一班航班
+                if (datetime.datetime.strptime(str(flights_beh.loc[j,'计飞']), "%Y-%m-%d %H:%M:%S")-
+                    datetime.datetime.strptime(str(flights_fro.loc[differ_num_fro,'实到']), "%Y-%m-%d %H:%M:%S")).seconds/60<TransitQuickTime:
+                    flights_beh.loc[j,'独立延误']=(datetime.datetime.strptime(flights_beh.loc[j,'实飞'], "%Y-%m-%d %H:%M:%S")-
+                                   datetime.datetime.strptime(flights_fro.loc[differ_num_fro,'实到'], "%Y-%m-%d %H:%M:%S")).seconds/60-TransitQuickTime
+#            else:
+#                continue
+                
+            for j in [int(d) for d in differ_num[1:-1]]:
+                if flights_beh.loc[j,'起飞场'] not in get_acrosstime[get_acrosstime['机号']==flights_beh.loc[j,'机号']].loc[:,'机场名称']:#防止出现某些起飞场不在过站时间的表格里
+                    TransitQuickTime=get_acrosstime[get_acrosstime['机号']==flights_beh.loc[j,'机号']][get_acrosstime[get_acrosstime['机号']==
+                                                                   flights_beh.loc[j,'机号']]['机场名称']=='其他'].values[0,15]#获得最快过站时间（不在过站时间表格里的机场称为其他机场）
+                else:
+                    TransitQuickTime=get_acrosstime[get_acrosstime['机号']==flights_beh.loc[j,'机号']][get_acrosstime[get_acrosstime['机号']==
+                                                                   flights_beh.loc[j,'机号']]['机场名称']==flights_beh.loc[j,'起飞场']].values[0,15]
+                if (datetime.datetime.strptime(str(flights_beh.loc[j,'计飞']), "%Y-%m-%d %H:%M:%S")-
+                    datetime.datetime.strptime(str(flights_beh.loc[j-1,'实到']), "%Y-%m-%d %H:%M:%S")).seconds/60<TransitQuickTime:#说明有波及延误
+                    flights_beh.loc[j,'独立延误']=(datetime.datetime.strptime(flights_beh.loc[j,'实飞'], "%Y-%m-%d %H:%M:%S")-
+                                   datetime.datetime.strptime(flights_beh.loc[j-1,'实到'], "%Y-%m-%d %H:%M:%S")).seconds/60-TransitQuickTime#去除波及延误，获得独立延误
+            i=differ_num[-1]+1
+        else:
+            i+=1
+#计算每个航班的延误严重程度
+    delay_degree=np.array([])
+    for i in range(len(flights_beh)):
+        if flights_beh.loc[i,'独立延误']/60==0:
+            delay_degree=np.append(delay_degree,0)
+        elif flights_beh.loc[i,'独立延误']/60<=0.5:
+            delay_degree=np.append(delay_degree,1)
+        elif flights_beh.loc[i,'独立延误']/60<1:
+            delay_degree=np.append(delay_degree,2)
+        elif flights_beh.loc[i,'独立延误']/60<2:
+            delay_degree=np.append(delay_degree,4)
+        elif flights_beh.loc[i,'独立延误']/60<4:
+            delay_degree=np.append(delay_degree,6)
+        else:
+            delay_degree=np.append(delay_degree,8)
+    flights_beh['延误严重程度']=delay_degree
+    
+#f(flights1,flights2)
+#f(flights2,flights3)
+#f(flights3,flights4)
+
+##输出文件
+#flights1.to_csv('flights1.csv',encoding='gbk',index=False)
+#flights2.to_csv('flights2.csv',encoding='gbk',index=False)
+#flights3.to_csv('flights3.csv',encoding='gbk',index=False)
+#flights4.to_csv('flights4.csv',encoding='gbk',index=False)
+###############################################################################################################################
+#进行每个机场延误严重程度汇总
+############################################################################################################################
+def f_sum_airport(flights):
+    for j in range(len(flights)):
+        if flights.loc[j,'起飞场'] in airport_delay_degree.index:
+            airport_delay_degree[flights.loc[j,'起飞场']]+=flights.loc[j,'延误严重程度']
+        else:
+            airport_delay_degree[flights.loc[j,'起飞场']]=flights.loc[j,'延误严重程度']
+airport_delay_degree=pd.Series([])
+#f_sum(flights1)
+#f_sum(flights2)
+#f_sum(flights3)
+#f_sum(flights4)
+#airport_delay_degree.to_csv('airport_delay_degree.csv',encoding='gbk')
+############################################################################################################################
+#进行每个航班的汇总
+######################################################################################################################
+def f_sum_flight(flights):
+    for j in range(len(flights)):
+        if flights.loc[j,'航班号'] in flight_delay_degree.index:
+            flight_delay_degree[flights.loc[j,'航班号']]+=flights.loc[j,'延误严重程度']
+        else:
+            flight_delay_degree[flights.loc[j,'航班号']]=flights.loc[j,'延误严重程度']
+flight_delay_degree=pd.Series([])
+
+
+
+flights1=get_flights('C:/Users/wdr78/Desktop/FlightScheduleSimulation-master/2018-02-01.csv')
+flights2=get_flights('C:/Users/wdr78/Desktop/FlightScheduleSimulation-master/2018-02-08.csv')
+flights3=get_flights('C:/Users/wdr78/Desktop/FlightScheduleSimulation-master/2018-02-15.csv')
+flights4=get_flights('C:/Users/wdr78/Desktop/FlightScheduleSimulation-master/2018-02-22.csv')
+initial_f(flights1)
+follow_f(flights1,flights2)
+follow_f(flights2,flights3)
+follow_f(flights3,flights4)
+f_sum_airport(flights1)
+f_sum_airport(flights2)
+f_sum_airport(flights3)
+f_sum_airport(flights4)
+f_sum_flight(flights1)
+f_sum_flight(flights2)
+f_sum_flight(flights3)
+f_sum_flight(flights4)
+#输出文件
+flights1.to_csv('flights1.csv',encoding='gbk',index=False)
+flights2.to_csv('flights2.csv',encoding='gbk',index=False)
+flights3.to_csv('flights3.csv',encoding='gbk',index=False)
+flights4.to_csv('flights4.csv',encoding='gbk',index=False)
+airport_delay_degree.to_csv('airport_delay_degree.csv',encoding='gbk')
+flight_delay_degree.to_csv('flight_delay_degree.csv',encoding='gbk')
+#flights5=get_flights('C:/Users/wdr78/Desktop/FlightScheduleSimulation-master/2016.csv')
+#initial_f(flights5)
+#f_sum(flights1)
