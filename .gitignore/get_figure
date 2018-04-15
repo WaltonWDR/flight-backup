@@ -1,0 +1,58 @@
+import numpy as np
+import pandas as pd
+import matplotlib
+matplotlib.use("Qt5Agg")
+import matplotlib.pyplot as plt
+
+flights1=pd.read_csv('C:/Users/wdr78/Desktop/FlightScheduleSimulation-master/flights1.csv',encoding='gbk')
+flights2=pd.read_csv('C:/Users/wdr78/Desktop/FlightScheduleSimulation-master/flights2.csv',encoding='gbk')
+flights3=pd.read_csv('C:/Users/wdr78/Desktop/FlightScheduleSimulation-master/flights3.csv',encoding='gbk')
+flights4=pd.read_csv('C:/Users/wdr78/Desktop/FlightScheduleSimulation-master/flights4.csv',encoding='gbk')
+flights1.values[:,'延误时间']-flights1.values[:,'延误时间']
+airport_delay_degree=pd.read_csv('C:/Users/wdr78/Desktop/FlightScheduleSimulation-master/airport_delay_degree.csv',encoding='gbk',header=None)
+airport_delay_degree = airport_delay_degree.sort_values(by=[1],ascending = [False])
+flight_delay_degree=pd.read_csv('C:/Users/wdr78/Desktop/FlightScheduleSimulation-master/flight_delay_degree.csv',encoding='gbk',header=None)
+flight_delay_degree = flight_delay_degree.sort_values(by=[1],ascending = [False])
+
+def airport_delay(DeptAirportName):
+    sample=pd.Series([])
+    for flights in [flights1,flights2,flights3,flights4]:
+        sample=pd.concat([sample,flights[flights['起飞场']=='%s'%DeptAirportName].独立延误])
+    sample=sample[sample>0]#现实数据中存在本航班实际起飞时间-上次航班实际到达时间小于快速过站时间的状况
+#from IPython.display import display
+#%matplotlib qt
+    plt.figure()
+    plt.hist(sample,bins=300,facecolor='g',histtype='bar')
+    plt.axis([0,100, 0, 400])
+    plt.grid(True)
+    zhfont1 = matplotlib.font_manager.FontProperties(fname='C:\Windows\Fonts\simkai.ttf')
+    plt.title('%s机场延误时间分布'%DeptAirportName,fontproperties=zhfont1,fontsize=25)
+    plt.xlabel('独立延误时间',fontproperties=zhfont1,fontsize=25)
+    plt.ylabel('频次',fontproperties=zhfont1,fontsize=25)
+    plt.savefig(DeptAirportName+'.png')
+    plt.show()
+
+airport_delay('昆明')
+for DeptAirportName in airport_delay_degree.values[0:10,0]:
+    airport_delay(DeptAirportName)
+
+def flight_delay(FlightIntactNo):
+    sample=pd.Series([])
+    for flights in [flights1,flights2,flights3,flights4]:
+        sample=pd.concat([sample,flights[flights['航班号']=='%s'%FlightIntactNo].独立延误])
+    sample=sample[sample>0]#现实数据中存在本航班实际起飞时间-上次航班实际到达时间小于快速过站时间的状况
+#from IPython.display import display
+#%matplotlib qt
+    plt.figure()
+    plt.hist(sample,bins=50,facecolor='b',histtype='bar')
+#plt.axis([0,100, 0, 400])
+    plt.grid(True)
+    zhfont1 = matplotlib.font_manager.FontProperties(fname='C:\Windows\Fonts\simkai.ttf')
+    plt.title('%s航班延误时间分布'%FlightIntactNo,fontproperties=zhfont1,fontsize=25)
+    plt.xlabel('独立延误时间',fontproperties=zhfont1,fontsize=25)
+    plt.ylabel('频次',fontproperties=zhfont1,fontsize=25)
+    plt.savefig(FlightIntactNo+'.png')
+    plt.show()
+flight_delay('FM821 ')
+for FlightIntactNo in flight_delay_degree.values[0:10,0]:
+    flight_delay(FlightIntactNo)
